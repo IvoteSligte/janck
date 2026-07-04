@@ -4,4 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-miniscreenshot-wayland = "0.2.0"
+log = "0.4.33"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+miniscreenshot = { version = "0.3" }
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+memmap2 = "0.9"
+libc = "0.2"

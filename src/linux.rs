@@ -1,6 +1,9 @@
 use std::time::{Duration, Instant};
 
-use miniscreenshot_wayland::WaylandCapture;
+use log::debug;
+
+mod wayland;
+use wayland::WaylandCapture;
 
 use crate::Rgb8Image;
 
@@ -50,6 +53,7 @@ pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Rgb8Image> {
     std::iter::from_fn(move || {
         let now = Instant::now();
         let diff = now.duration_since(last);
+        debug!("Frame time: {}ms", diff.as_millis());
         if diff < frame_duration {
             std::thread::sleep(frame_duration - diff);
         }
