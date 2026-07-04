@@ -452,13 +452,6 @@ impl WaylandCapture {
         convert_to_rgba(&mmap, width, height, stride, shm_format)
             .ok_or(WaylandCaptureError::CaptureFailed)
     }
-
-    /// Capture all available outputs.
-    pub fn capture_all(&mut self) -> Result<Vec<Screenshot>, WaylandCaptureError> {
-        (0..self.output_count())
-            .map(|i| self.capture_output(i))
-            .collect()
-    }
 }
 
 // ── Pixel conversion ──────────────────────────────────────────────────────────
