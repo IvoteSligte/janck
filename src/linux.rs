@@ -5,7 +5,7 @@ use log::debug;
 mod wayland;
 use wayland::WaylandCapture;
 
-use crate::Rgb8Image;
+use crate::{Rgb8Image, Yuv420Image};
 
 pub struct State {
     capture: WaylandCapture,
@@ -45,7 +45,7 @@ impl State {
     }
 }
 
-pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Rgb8Image> {
+pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Yuv420Image> {
     let mut state = State::new();
     let mut last = Instant::now();
     let frame_duration = Duration::from_nanos(1_000_000_000 / frame_rate);
@@ -57,7 +57,7 @@ pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Rgb8Image> {
         if diff < frame_duration {
             std::thread::sleep(frame_duration - diff);
         }
-        let frame = state.capture();
+        let frame = state.capture().to_yuv().unwrap();
         last = now;
         Some(frame)
     })
