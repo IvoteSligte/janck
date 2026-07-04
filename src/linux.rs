@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use miniscreenshot_wayland::WaylandCapture;
 
 use crate::Rgb8Image;
@@ -40,14 +42,19 @@ impl State {
     }
 }
 
-impl Iterator for State {
-    type Item = Rgb8Image;
+pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Rgb8Image> {
+    let mut state = State::new();
+    let mut last = Instant::now();
+    let frame_duration = Duration::from_nanos(1_000_000_000 / frame_rate);
 
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(self.capture())
-    }
-}
-
-pub fn capture_video() -> impl Iterator<Item = Rgb8Image> {
-    State::new()
+    std::iter::from_fn(move || {
+        let now = Instant::now();
+        let diff = now.duration_since(last);
+        if diff < frame_duration {
+            std::thread::sleep(frame_duration - diff);
+        }
+        let frame = state.capture();
+        last = now;
+        Some(frame)
+    })
 }
