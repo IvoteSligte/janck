@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use log::debug;
+use log::{debug, trace};
 
 mod wayland;
 use wayland::WaylandCapture;
@@ -29,6 +29,11 @@ pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Yuv420Image> {
         );
         let diff = now_frame.duration_since(last);
         if diff < frame_duration {
+            trace!(
+                "Sleeping {:.2}ms",
+                (frame_duration - diff).as_micros() as f32 / 1000.0
+            );
+            // TODO: sleep tends to overshoot by ~50 micros, should this be compensated for?
             std::thread::sleep(frame_duration - diff);
         }
         let now_capture = Instant::now();
