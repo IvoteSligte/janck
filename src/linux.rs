@@ -22,6 +22,10 @@ pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Yuv420Image> {
 
     std::iter::from_fn(move || {
         let now_frame = Instant::now();
+        debug!(
+            "Time since last frame: {}ms",
+            (now_frame - last).as_millis()
+        );
         let diff = now_frame.duration_since(last);
         if diff < frame_duration {
             std::thread::sleep(frame_duration - diff);
