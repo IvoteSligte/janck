@@ -22,7 +22,7 @@
 //! shot.save("screenshot.png").unwrap();
 //! ```
 
-pub use miniscreenshot::{Capture, CaptureError, MultiCapture, Screenshot};
+pub use miniscreenshot::CaptureError;
 pub use wayland_client;
 pub use wayland_protocols_wlr;
 
@@ -35,6 +35,8 @@ use wayland_client::{
 use wayland_protocols_wlr::screencopy::v1::client::{
     zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
 };
+
+use crate::Rgb8Image;
 
 // ── Error type ────────────────────────────────────────────────────────────────
 
@@ -368,7 +370,7 @@ impl WaylandCapture {
     pub fn capture_output(
         &mut self,
         output_index: usize,
-    ) -> Result<Screenshot, WaylandCaptureError> {
+    ) -> Result<Rgb8Image, WaylandCaptureError> {
         let output = self
             .state
             .outputs
@@ -449,60 +451,44 @@ impl WaylandCapture {
         wl_buf.destroy();
 
         let mmap = fc.mmap.unwrap();
-        convert_to_rgba(&mmap, width, height, stride, shm_format)
+        convert_to_rgb(&mmap, width, height, stride, shm_format)
             .ok_or(WaylandCaptureError::CaptureFailed)
     }
 }
 
 // ── Pixel conversion ──────────────────────────────────────────────────────────
 
-fn convert_to_rgba(
+fn convert_to_rgb(
     raw: &[u8],
     width: u32,
     height: u32,
     stride: u32,
     format: wl_shm::Format,
-) -> Option<Screenshot> {
-    let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
+) -> Option<Rgb8Image> {
+    let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
     for row in 0..height as usize {
         let start = row * stride as usize;
-        let end = start + width as usize * 4;
+        let end = start + width as usize * 3;
         let row_data = raw.get(start..end)?;
         match format {
             wl_shm::Format::Argb8888 => {
                 // Little-endian u32 layout: [B, G, R, A]
                 for p in row_data.chunks_exact(4) {
-                    rgba.extend_from_slice(&[p[2], p[1], p[0], p[3]]);
+                    rgb.extend_from_slice(&[p[2], p[1], p[0]]);
                 }
             }
             wl_shm::Format::Xrgb8888 => {
                 // Little-endian u32 layout: [B, G, R, X]
                 for p in row_data.chunks_exact(4) {
-                    rgba.extend_from_slice(&[p[2], p[1], p[0], 255]);
+                    rgb.extend_from_slice(&[p[2], p[1], p[0]]);
                 }
             }
             _ => return None,
         }
     }
-    Some(Screenshot::from_rgba(width, height, rgba))
-}
-
-// ── Capture ──────────────────────────────────────────────────────────────────
-
-impl Capture for WaylandCapture {
-    type Error = CaptureError;
-
-    fn capture(&mut self) -> Result<Screenshot, CaptureError> {
-        self.capture_output(0).map_err(CaptureError::from)
-    }
-}
-
-impl MultiCapture for WaylandCapture {
-    fn source_count(&self) -> usize {
-        self.output_count()
-    }
-
-    fn capture_index(&mut self, index: usize) -> Result<Screenshot, CaptureError> {
-        self.capture_output(index).map_err(CaptureError::from)
-    }
+    Some(Rgb8Image {
+        width,
+        height,
+        data: rgb,
+    })
 }
