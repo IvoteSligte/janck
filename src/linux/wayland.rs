@@ -22,11 +22,12 @@
 //! shot.save("screenshot.png").unwrap();
 //! ```
 
+use log::trace;
 pub use wayland_client;
 pub use wayland_protocols_wlr;
 
 use memmap2::MmapMut;
-use std::os::unix::io::AsFd;
+use std::{os::unix::io::AsFd, time::Instant};
 use wayland_client::{
     Connection, Dispatch, EventQueue, QueueHandle, WEnum,
     protocol::{wl_buffer, wl_output, wl_registry, wl_shm, wl_shm_pool},
@@ -342,6 +343,7 @@ impl WaylandCapture {
         &mut self,
         output_index: usize,
     ) -> Result<Yuv420Image, WaylandCaptureError> {
+        let instant = Instant::now();
         let output = self
             .state
             .outputs
@@ -354,6 +356,9 @@ impl WaylandCapture {
 
         self.state.frame = Some(FrameCapture::new());
         let frame = manager.capture_output(0, &output, &qh, ());
+
+        trace!("Setup time: {}μs", (Instant::now() - instant).as_micros());
+        let instant = Instant::now();
 
         // Phase 1: wait for buffer info + buffer_done.
         loop {
@@ -370,6 +375,12 @@ impl WaylandCapture {
                 _ => {}
             }
         }
+
+        trace!(
+            "Wait-for-buffer_info and buffer_done time: {}μs",
+            (Instant::now() - instant).as_micros()
+        );
+        let instant = Instant::now();
 
         // Allocate SHM.
         let fc = self.state.frame.as_mut().unwrap();
@@ -399,6 +410,12 @@ impl WaylandCapture {
         fc.wl_buffer = Some(wl_buf.clone());
         frame.copy(&wl_buf);
 
+        trace!(
+            "Allocate SHM time: {}μs",
+            (Instant::now() - instant).as_micros()
+        );
+        let instant = Instant::now();
+
         // Phase 2: wait for ready or failed.
         loop {
             self.event_queue
@@ -416,13 +433,32 @@ impl WaylandCapture {
             }
         }
 
+        trace!(
+            "Wait-for-ready or failed time: {}μs",
+            (Instant::now() - instant).as_micros()
+        );
+        let instant = Instant::now();
+
         // Extract pixels.
         let fc = self.state.frame.take().unwrap();
         frame.destroy();
         wl_buf.destroy();
 
+        trace!(
+            "Extract pixels time: {}μs",
+            (Instant::now() - instant).as_micros()
+        );
+        let instant = Instant::now();
+
         let mmap = fc.mmap.unwrap();
-        convert_to_yuv(&mmap, width, height, stride, shm_format)
+        let image = convert_to_yuv(&mmap, width, height, stride, shm_format)?;
+
+        trace!(
+            "Convert to YUV time: {}μs",
+            (Instant::now() - instant).as_micros()
+        );
+
+        Ok(image)
     }
 }
 
