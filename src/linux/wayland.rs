@@ -39,7 +39,7 @@ use yuv::{
     YuvStandardMatrix,
 };
 
-use crate::{Rgb8Image, Yuv420Image};
+use crate::Yuv420Image;
 
 // ── Error type ────────────────────────────────────────────────────────────────
 

@@ -7,28 +7,16 @@ use wayland::WaylandCapture;
 
 use crate::Yuv420Image;
 
-pub struct State {
-    capture: WaylandCapture,
-}
-
-impl State {
-    pub fn new() -> Self {
-        Self {
-            capture: WaylandCapture::connect()
-                .expect("Cannot connect to Wayland and X11 is not yet supported"),
-        }
-    }
-
-    pub fn capture(&mut self) -> Yuv420Image {
-        match self.capture.capture_output(0) {
-            Ok(image) => image,
-            Err(err) => panic!("Failed to capture screen: {err}"),
-        }
+fn capture_image(capture: &mut WaylandCapture) -> Yuv420Image {
+    match capture.capture_output(0) {
+        Ok(image) => image,
+        Err(err) => panic!("Failed to capture screen: {err}"),
     }
 }
 
 pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Yuv420Image> {
-    let mut state = State::new();
+    let mut capture =
+        WaylandCapture::connect().expect("Cannot connect to Wayland and X11 is not yet supported");
     let mut last = Instant::now();
     let frame_duration = Duration::from_nanos(1_000_000_000 / frame_rate);
 
@@ -39,7 +27,7 @@ pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Yuv420Image> {
             std::thread::sleep(frame_duration - diff);
         }
         let now_capture = Instant::now();
-        let frame = state.capture();
+        let frame = capture_image(&mut capture);
         debug!(
             "Frame capture time: {}ms",
             (Instant::now() - now_capture).as_millis()
