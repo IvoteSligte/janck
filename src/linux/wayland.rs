@@ -22,21 +22,24 @@
 //! shot.save("screenshot.png").unwrap();
 //! ```
 
-pub use miniscreenshot::CaptureError;
 pub use wayland_client;
 pub use wayland_protocols_wlr;
 
 use memmap2::MmapMut;
 use std::os::unix::io::AsFd;
 use wayland_client::{
-    protocol::{wl_buffer, wl_output, wl_registry, wl_shm, wl_shm_pool},
     Connection, Dispatch, EventQueue, QueueHandle, WEnum,
+    protocol::{wl_buffer, wl_output, wl_registry, wl_shm, wl_shm_pool},
 };
 use wayland_protocols_wlr::screencopy::v1::client::{
     zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
 };
+use yuv::{
+    BufferStoreMut, YuvChromaSubsampling, YuvConversionMode, YuvPlanarImageMut, YuvRange,
+    YuvStandardMatrix,
+};
 
-use crate::Rgb8Image;
+use crate::{Rgb8Image, Yuv420Image};
 
 // ── Error type ────────────────────────────────────────────────────────────────
 
@@ -47,6 +50,8 @@ pub enum WaylandCaptureError {
     NoShm,
     OutputNotFound(usize),
     CaptureFailed,
+    YuvError(yuv::YuvError),
+    UnsupportedFormat(wl_shm::Format),
     Dispatch(wayland_client::DispatchError),
     Io(std::io::Error),
 }
@@ -59,6 +64,8 @@ impl std::fmt::Display for WaylandCaptureError {
             Self::NoShm => write!(f, "compositor lacks wl_shm"),
             Self::OutputNotFound(i) => write!(f, "output index {i} not found"),
             Self::CaptureFailed => write!(f, "compositor reported capture failure"),
+            Self::YuvError(e) => write!(f, "conversion to YUV failed: {e}"),
+            Self::UnsupportedFormat(format) => write!(f, "unsupported capture format: {format:?}"),
             Self::Dispatch(e) => write!(f, "Wayland dispatch error: {e}"),
             Self::Io(e) => write!(f, "I/O error: {e}"),
         }
@@ -72,43 +79,6 @@ impl std::error::Error for WaylandCaptureError {
             Self::Dispatch(e) => Some(e),
             Self::Io(e) => Some(e),
             _ => None,
-        }
-    }
-}
-
-impl From<WaylandCaptureError> for CaptureError {
-    fn from(e: WaylandCaptureError) -> Self {
-        use miniscreenshot::CaptureErrorKind;
-        match e {
-            WaylandCaptureError::Connection(err) => CaptureError::new(
-                CaptureErrorKind::Connect,
-                format!("Wayland connection error: {err}"),
-            )
-            .with_source(WaylandCaptureError::Connection(err)),
-            WaylandCaptureError::NoScreencopyManager => CaptureError::new(
-                CaptureErrorKind::Unsupported,
-                "compositor lacks zwlr_screencopy_manager_v1",
-            ),
-            WaylandCaptureError::NoShm => {
-                CaptureError::new(CaptureErrorKind::Unsupported, "compositor lacks wl_shm")
-            }
-            WaylandCaptureError::OutputNotFound(i) => CaptureError::new(
-                CaptureErrorKind::Unsupported,
-                format!("output index {i} not found"),
-            ),
-            WaylandCaptureError::CaptureFailed => CaptureError::new(
-                CaptureErrorKind::Backend,
-                "compositor reported capture failure",
-            ),
-            WaylandCaptureError::Dispatch(err) => CaptureError::new(
-                CaptureErrorKind::Backend,
-                format!("Wayland dispatch error: {err}"),
-            )
-            .with_source(WaylandCaptureError::Dispatch(err)),
-            WaylandCaptureError::Io(err) => {
-                CaptureError::new(CaptureErrorKind::Io, format!("I/O error: {err}"))
-                    .with_source(WaylandCaptureError::Io(err))
-            }
         }
     }
 }
@@ -362,6 +332,7 @@ impl WaylandCapture {
     }
 
     /// Number of outputs (monitors) available.
+    #[allow(unused)]
     pub fn output_count(&self) -> usize {
         self.state.outputs.len()
     }
@@ -370,7 +341,7 @@ impl WaylandCapture {
     pub fn capture_output(
         &mut self,
         output_index: usize,
-    ) -> Result<Rgb8Image, WaylandCaptureError> {
+    ) -> Result<Yuv420Image, WaylandCaptureError> {
         let output = self
             .state
             .outputs
@@ -451,8 +422,7 @@ impl WaylandCapture {
         wl_buf.destroy();
 
         let mmap = fc.mmap.unwrap();
-        convert_to_rgb(&mmap, width, height, stride, shm_format)
-            .ok_or(WaylandCaptureError::CaptureFailed)
+        convert_to_yuv(&mmap, width, height, stride, shm_format)
     }
 }
 
@@ -468,17 +438,11 @@ fn convert_to_rgb(
     let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
     for row in 0..height as usize {
         let start = row * stride as usize;
-        let end = start + width as usize * 3;
+        let end = start + width as usize * 4;
         let row_data = raw.get(start..end)?;
         match format {
-            wl_shm::Format::Argb8888 => {
-                // Little-endian u32 layout: [B, G, R, A]
-                for p in row_data.chunks_exact(4) {
-                    rgb.extend_from_slice(&[p[2], p[1], p[0]]);
-                }
-            }
-            wl_shm::Format::Xrgb8888 => {
-                // Little-endian u32 layout: [B, G, R, X]
+            wl_shm::Format::Argb8888 | wl_shm::Format::Xrgb8888 => {
+                // Little-endian u32 layout: [B, G, R, A] | [B, G, R, X]
                 for p in row_data.chunks_exact(4) {
                     rgb.extend_from_slice(&[p[2], p[1], p[0]]);
                 }
@@ -490,5 +454,45 @@ fn convert_to_rgb(
         width,
         height,
         data: rgb,
+    })
+}
+
+pub fn convert_to_yuv(
+    raw: &[u8],
+    width: u32,
+    height: u32,
+    stride: u32,
+    format: wl_shm::Format,
+) -> Result<Yuv420Image, WaylandCaptureError> {
+    if !matches!(format, wl_shm::Format::Argb8888 | wl_shm::Format::Xrgb8888) {
+        return Err(WaylandCaptureError::UnsupportedFormat(format));
+    }
+    let mut yuv = YuvPlanarImageMut::alloc(width, height, YuvChromaSubsampling::Yuv420);
+    yuv::bgra_to_yuv420(
+        &mut yuv,
+        raw,
+        stride,
+        YuvRange::Full,
+        YuvStandardMatrix::Bt709,
+        YuvConversionMode::Balanced,
+    )
+    .map_err(WaylandCaptureError::YuvError)?;
+    let (
+        BufferStoreMut::Owned(y_plane),
+        BufferStoreMut::Owned(u_plane),
+        BufferStoreMut::Owned(v_plane),
+    ) = (yuv.y_plane, yuv.u_plane, yuv.v_plane)
+    else {
+        unreachable!();
+    };
+    Ok(Yuv420Image {
+        width: yuv.width,
+        height: yuv.height,
+        y_stride: yuv.y_stride,
+        u_stride: yuv.u_stride,
+        v_stride: yuv.v_stride,
+        y_plane: y_plane,
+        u_plane: u_plane,
+        v_plane: v_plane,
     })
 }
