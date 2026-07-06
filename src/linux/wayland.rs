@@ -428,35 +428,6 @@ impl WaylandCapture {
 
 // ── Pixel conversion ──────────────────────────────────────────────────────────
 
-fn convert_to_rgb(
-    raw: &[u8],
-    width: u32,
-    height: u32,
-    stride: u32,
-    format: wl_shm::Format,
-) -> Option<Rgb8Image> {
-    let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
-    for row in 0..height as usize {
-        let start = row * stride as usize;
-        let end = start + width as usize * 4;
-        let row_data = raw.get(start..end)?;
-        match format {
-            wl_shm::Format::Argb8888 | wl_shm::Format::Xrgb8888 => {
-                // Little-endian u32 layout: [B, G, R, A] | [B, G, R, X]
-                for p in row_data.chunks_exact(4) {
-                    rgb.extend_from_slice(&[p[2], p[1], p[0]]);
-                }
-            }
-            _ => return None,
-        }
-    }
-    Some(Rgb8Image {
-        width,
-        height,
-        data: rgb,
-    })
-}
-
 pub fn convert_to_yuv(
     raw: &[u8],
     width: u32,
