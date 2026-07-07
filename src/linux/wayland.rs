@@ -35,12 +35,6 @@ use wayland_client::{
 use wayland_protocols_wlr::screencopy::v1::client::{
     zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
 };
-use yuv::{
-    BufferStoreMut, YuvChromaSubsampling, YuvConversionMode, YuvPlanarImageMut, YuvRange,
-    YuvStandardMatrix,
-};
-
-use crate::Yuv420Image;
 
 // ── Error type ────────────────────────────────────────────────────────────────
 
@@ -51,7 +45,6 @@ pub enum WaylandCaptureError {
     NoShm,
     OutputNotFound(usize),
     CaptureFailed,
-    YuvError(yuv::YuvError),
     UnsupportedFormat(wl_shm::Format),
     Dispatch(wayland_client::DispatchError),
     Io(std::io::Error),
@@ -65,7 +58,6 @@ impl std::fmt::Display for WaylandCaptureError {
             Self::NoShm => write!(f, "compositor lacks wl_shm"),
             Self::OutputNotFound(i) => write!(f, "output index {i} not found"),
             Self::CaptureFailed => write!(f, "compositor reported capture failure"),
-            Self::YuvError(e) => write!(f, "conversion to YUV failed: {e}"),
             Self::UnsupportedFormat(format) => write!(f, "unsupported capture format: {format:?}"),
             Self::Dispatch(e) => write!(f, "Wayland dispatch error: {e}"),
             Self::Io(e) => write!(f, "I/O error: {e}"),
@@ -272,7 +264,6 @@ fn create_shm_file(size: usize) -> std::io::Result<std::fs::File> {
     create_shm_file_impl(size)
 }
 
-#[cfg(target_os = "linux")]
 fn create_shm_file_impl(size: usize) -> std::io::Result<std::fs::File> {
     use std::os::unix::io::FromRawFd;
     let name = b"miniscreenshot\0";
@@ -288,16 +279,6 @@ fn create_shm_file_impl(size: usize) -> std::io::Result<std::fs::File> {
     }
     // SAFETY: syscall returned a valid, owned file descriptor.
     let file = unsafe { std::fs::File::from_raw_fd(fd as libc::c_int) };
-    file.set_len(size as u64)?;
-    Ok(file)
-}
-
-#[cfg(not(target_os = "linux"))]
-fn create_shm_file_impl(size: usize) -> std::io::Result<std::fs::File> {
-    // Use the platform's atomic temp-file API (O_EXCL under the hood on Unix,
-    // `CreateFileA` with `FILE_FLAG_DELETE_ON_CLOSE` on Windows). Avoids
-    // predictable `/tmp` paths and symlink races.
-    let file = tempfile::tempfile()?;
     file.set_len(size as u64)?;
     Ok(file)
 }
@@ -342,7 +323,7 @@ impl WaylandCapture {
     pub fn capture_output(
         &mut self,
         output_index: usize,
-    ) -> Result<Yuv420Image, WaylandCaptureError> {
+    ) -> Result<crate::Frame, WaylandCaptureError> {
         let instant = Instant::now();
         let output = self
             .state
@@ -448,58 +429,28 @@ impl WaylandCapture {
             "Extract pixels time: {}μs",
             (Instant::now() - instant).as_micros()
         );
-        let instant = Instant::now();
-
         let mmap = fc.mmap.unwrap();
-        let image = convert_to_yuv(&mmap, width, height, stride, shm_format)?;
-
-        trace!(
-            "Convert to YUV time: {}μs",
-            (Instant::now() - instant).as_micros()
-        );
-
-        Ok(image)
+        Ok(crate::Frame {
+            bytes: mmap.to_vec(),
+            width,
+            height,
+            stride,
+            format: shm_format.try_into()?,
+        })
     }
 }
 
-// ── Pixel conversion ──────────────────────────────────────────────────────────
+// ── Format conversion ──────────────────────────────────────────────────────────
 
-pub fn convert_to_yuv(
-    raw: &[u8],
-    width: u32,
-    height: u32,
-    stride: u32,
-    format: wl_shm::Format,
-) -> Result<Yuv420Image, WaylandCaptureError> {
-    if !matches!(format, wl_shm::Format::Argb8888 | wl_shm::Format::Xrgb8888) {
-        return Err(WaylandCaptureError::UnsupportedFormat(format));
+impl TryFrom<wl_shm::Format> for crate::Format {
+    type Error = WaylandCaptureError;
+
+    fn try_from(value: wl_shm::Format) -> Result<Self, Self::Error> {
+        match value {
+            // ARGB/XRGB map to BGRA in little-endian u32 format as the bytes are reversed, which is what most CPUs use
+            // TODO: big-endian conversions
+            wl_shm::Format::Argb8888 | wl_shm::Format::Xrgb8888 => Ok(crate::Format::Bgra8),
+            _ => Err(WaylandCaptureError::UnsupportedFormat(value)),
+        }
     }
-    let mut yuv = YuvPlanarImageMut::alloc(width, height, YuvChromaSubsampling::Yuv420);
-    yuv::bgra_to_yuv420(
-        &mut yuv,
-        raw,
-        stride,
-        YuvRange::Full,
-        YuvStandardMatrix::Bt709,
-        YuvConversionMode::Balanced,
-    )
-    .map_err(WaylandCaptureError::YuvError)?;
-    let (
-        BufferStoreMut::Owned(y_plane),
-        BufferStoreMut::Owned(u_plane),
-        BufferStoreMut::Owned(v_plane),
-    ) = (yuv.y_plane, yuv.u_plane, yuv.v_plane)
-    else {
-        unreachable!();
-    };
-    Ok(Yuv420Image {
-        width: yuv.width,
-        height: yuv.height,
-        y_stride: yuv.y_stride,
-        u_stride: yuv.u_stride,
-        v_stride: yuv.v_stride,
-        y_plane: y_plane,
-        u_plane: u_plane,
-        v_plane: v_plane,
-    })
 }

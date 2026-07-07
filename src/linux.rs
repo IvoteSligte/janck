@@ -5,9 +5,7 @@ use log::{debug, trace};
 mod wayland;
 use wayland::WaylandCapture;
 
-use crate::Yuv420Image;
-
-fn capture_image(capture: &mut WaylandCapture) -> Yuv420Image {
+fn capture_frame(capture: &mut WaylandCapture) -> crate::Frame {
     match capture.capture_output(0) {
         Ok(image) => image,
         Err(err) => panic!("Failed to capture screen: {err}"),
@@ -15,7 +13,7 @@ fn capture_image(capture: &mut WaylandCapture) -> Yuv420Image {
 }
 
 // TODO: show_cursor: bool parameter
-pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Yuv420Image> {
+pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = crate::Frame> {
     let mut capture =
         WaylandCapture::connect().expect("Cannot connect to Wayland and X11 is not yet supported");
     let mut last = Instant::now();
@@ -37,7 +35,7 @@ pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = Yuv420Image> {
             std::thread::sleep(frame_duration - diff);
         }
         let now_capture = Instant::now();
-        let frame = capture_image(&mut capture);
+        let frame = capture_frame(&mut capture);
         debug!(
             "Frame capture time: {:.2}ms",
             (Instant::now() - now_capture).as_micros() as f32 / 1000.0
