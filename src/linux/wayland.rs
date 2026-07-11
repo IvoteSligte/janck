@@ -78,6 +78,7 @@ impl std::error::Error for WaylandCaptureError {
 
 // ── Internal state ────────────────────────────────────────────────────────────
 
+#[derive(Default)]
 struct AppState {
     screencopy_manager: Option<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1>,
     shm: Option<wl_shm::WlShm>,
@@ -85,17 +86,7 @@ struct AppState {
     frame: Option<FrameCapture>,
 }
 
-impl AppState {
-    fn new() -> Self {
-        Self {
-            screencopy_manager: None,
-            shm: None,
-            outputs: Vec::new(),
-            frame: None,
-        }
-    }
-}
-
+#[derive(Default)]
 struct FrameCapture {
     shm_format: Option<wl_shm::Format>,
     width: u32,
@@ -106,22 +97,6 @@ struct FrameCapture {
     failed: bool,
     mmap: Option<MmapMut>,
     wl_buffer: Option<wl_buffer::WlBuffer>,
-}
-
-impl FrameCapture {
-    fn new() -> Self {
-        Self {
-            shm_format: None,
-            width: 0,
-            height: 0,
-            stride: 0,
-            buffer_done: false,
-            ready: false,
-            failed: false,
-            mmap: None,
-            wl_buffer: None,
-        }
-    }
 }
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
@@ -159,65 +134,27 @@ impl Dispatch<wl_registry::WlRegistry, ()> for AppState {
     }
 }
 
-impl Dispatch<wl_shm::WlShm, ()> for AppState {
-    fn event(
-        _: &mut Self,
-        _: &wl_shm::WlShm,
-        _: wl_shm::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
+macro_rules! impl_dummy_dispatch {
+    ($namespace:ident :: $item:ident) => {
+        impl Dispatch<$namespace::$item, ()> for AppState {
+            fn event(
+                _: &mut Self,
+                _: &$namespace::$item,
+                _: $namespace::Event,
+                _: &(),
+                _: &Connection,
+                _: &QueueHandle<Self>,
+            ) {
+            }
+        }
+    };
 }
 
-impl Dispatch<wl_shm_pool::WlShmPool, ()> for AppState {
-    fn event(
-        _: &mut Self,
-        _: &wl_shm_pool::WlShmPool,
-        _: wl_shm_pool::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-
-impl Dispatch<wl_buffer::WlBuffer, ()> for AppState {
-    fn event(
-        _: &mut Self,
-        _: &wl_buffer::WlBuffer,
-        _: wl_buffer::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-
-impl Dispatch<wl_output::WlOutput, ()> for AppState {
-    fn event(
-        _: &mut Self,
-        _: &wl_output::WlOutput,
-        _: wl_output::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-
-impl Dispatch<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1, ()> for AppState {
-    fn event(
-        _: &mut Self,
-        _: &zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1,
-        _: zwlr_screencopy_manager_v1::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
+impl_dummy_dispatch!(wl_shm::WlShm);
+impl_dummy_dispatch!(wl_shm_pool::WlShmPool);
+impl_dummy_dispatch!(wl_buffer::WlBuffer);
+impl_dummy_dispatch!(wl_output::WlOutput);
+impl_dummy_dispatch!(zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1);
 
 impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for AppState {
     fn event(
@@ -228,9 +165,8 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for AppState 
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        let frame = match state.frame.as_mut() {
-            Some(f) => f,
-            None => return,
+        let Some(frame) = state.frame.as_mut() else {
+            return;
         };
         match event {
             zwlr_screencopy_frame_v1::Event::Buffer {
@@ -261,10 +197,6 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for AppState 
 // ── SHM helper ────────────────────────────────────────────────────────────────
 
 fn create_shm_file(size: usize) -> std::io::Result<std::fs::File> {
-    create_shm_file_impl(size)
-}
-
-fn create_shm_file_impl(size: usize) -> std::io::Result<std::fs::File> {
     use std::os::unix::io::FromRawFd;
     let name = b"miniscreenshot\0";
     let fd = unsafe {
@@ -297,7 +229,7 @@ impl WaylandCapture {
         let conn = Connection::connect_to_env().map_err(WaylandCaptureError::Connection)?;
         let mut event_queue = conn.new_event_queue::<AppState>();
         let qh = event_queue.handle();
-        let mut state = AppState::new();
+        let mut state = AppState::default();
 
         conn.display().get_registry(&qh, ());
         event_queue
@@ -335,7 +267,7 @@ impl WaylandCapture {
         let qh = self.event_queue.handle();
         let manager = self.state.screencopy_manager.as_ref().unwrap();
 
-        self.state.frame = Some(FrameCapture::new());
+        self.state.frame = Some(FrameCapture::default());
         let frame = manager.capture_output(0, &output, &qh, ());
 
         trace!("Setup time: {}μs", (Instant::now() - instant).as_micros());
