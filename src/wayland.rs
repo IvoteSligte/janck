@@ -391,3 +391,18 @@ impl TryFrom<wl_shm::Format> for crate::Format {
         }
     }
 }
+
+// ── API ────────────────────────────────────────────────────────────────────────
+
+const SHOW_CURSOR: bool = true;
+
+pub fn capture_video(
+    frame_rate: u64,
+) -> Result<impl Iterator<Item = crate::Frame>, WaylandCaptureError> {
+    let mut capture = WaylandCapture::connect()?;
+    let video = std::iter::from_fn(move || {
+        // TODO: select primary output (if that is not already output 0)
+        capture.capture_output(0, SHOW_CURSOR).ok()
+    });
+    Ok(crate::subsample_video(video, frame_rate))
+}
