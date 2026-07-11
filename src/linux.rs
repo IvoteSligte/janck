@@ -5,7 +5,8 @@ use log::{debug, trace};
 mod wayland;
 use wayland::WaylandCapture;
 
-// TODO: show_cursor: bool parameter
+const SHOW_CURSOR: bool = true;
+
 pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = crate::Frame> {
     let mut capture =
         WaylandCapture::connect().expect("Cannot connect to Wayland and X11 is not yet supported");
@@ -29,7 +30,7 @@ pub fn capture_video(frame_rate: u64) -> impl Iterator<Item = crate::Frame> {
         }
         let now_capture = Instant::now();
         let frame = capture
-            .capture_output(0)
+            .capture_output(0, SHOW_CURSOR)
             .unwrap_or_else(|err| panic!("Failed to capture screen: {err}"));
         debug!(
             "Frame capture time: {:.2}ms",

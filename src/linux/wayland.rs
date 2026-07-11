@@ -257,6 +257,7 @@ impl WaylandCapture {
     pub fn capture_output(
         &mut self,
         output_index: usize,
+        overlay_cursor: bool,
     ) -> Result<crate::Frame, WaylandCaptureError> {
         let instant = Instant::now();
         let output = self
@@ -270,7 +271,7 @@ impl WaylandCapture {
         let manager = self.state.screencopy_manager.as_ref().unwrap();
 
         self.state.frame = Some(FrameCapture::default());
-        let frame = manager.capture_output(0, &output, &qh, ());
+        let frame = manager.capture_output(overlay_cursor as _, &output, &qh, ());
 
         trace!("Setup time: {}μs", (Instant::now() - instant).as_micros());
         let instant = Instant::now();
