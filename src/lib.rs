@@ -13,12 +13,16 @@ pub mod macos;
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 use target_os_is_not_supported;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Bgra8,
     // TODO: other formats (BGRA8 is the most common)
 }
 
+#[derive(Debug)]
 pub struct Frame {
+    /// Timestamp in microseconds since unix epoch
+    pub timestamp: i64,
     pub bytes: Vec<u8>,
     pub width: u32,
     pub height: u32,
