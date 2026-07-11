@@ -1,3 +1,5 @@
+//! Adapted from https://github.com/sunsided/miniscreenshot/tree/main/miniscreenshot-wayland
+//!
 //! Wayland screen capture using the **wlr-screencopy-v1** protocol.
 //!
 //! Supports wlroots-based compositors such as [Sway] and [Hyprland].
