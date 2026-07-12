@@ -4,13 +4,14 @@
 use std::time::{Duration, Instant};
 
 use ::xcap::XCapError;
-use log::{debug, trace};
+use log::{debug, info, trace, warn};
 use thiserror::Error;
 
 #[cfg(target_os = "linux")]
 pub mod wayland;
 pub mod xcap;
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Bgra8,
@@ -70,21 +71,33 @@ impl std::fmt::Display for Error {
 
 /// Cross-platform function that works on most setups.
 pub fn capture_video(frame_rate: u64) -> Result<impl Iterator<Item = Frame>, Error> {
+    // Trying Wayland screencopy first because XCap seems to hang on failure in  some situations
+    #[cfg(target_os = "linux")]
+    info!("Trying Wayland screencopy");
+    #[cfg(target_os = "linux")]
+    let wayland_error = match crate::wayland::capture_video(frame_rate) {
+        Ok(video) => return Ok(Box::new(video) as Box<dyn Iterator<Item = Frame> + Send>),
+        Err(err) => err,
+    };
+    #[cfg(target_os = "linux")]
+    warn!("Wayland screencopy failed: {wayland_error}");
+
+    info!("Trying XCap");
+    let xcap_error = match crate::xcap::capture_video(frame_rate) {
+        Ok(video) => {
+            #[cfg(target_os = "linux")]
+            return Ok(Box::new(video) as Box<dyn Iterator<Item = Frame> + Send>);
+            #[cfg(not(target_os = "linux"))]
+            return Ok(video);
+        }
+        Err(err) => err,
+    };
+    warn!("XCap failed: {xcap_error}");
     #[cfg(not(target_os = "linux"))]
-    return crate::xcap::capture_video(frame_rate);
+    return Err(xcap_error);
 
     #[cfg(target_os = "linux")]
-    {
-        let xcap_error = match crate::xcap::capture_video(frame_rate) {
-            Ok(video) => return Ok(Box::new(video) as Box<dyn Iterator<Item = Frame> + Send>),
-            Err(err) => err,
-        };
-        let wayland_error = match crate::wayland::capture_video(frame_rate) {
-            Ok(video) => return Ok(Box::new(video) as Box<dyn Iterator<Item = Frame> + Send>),
-            Err(err) => err,
-        };
-        Err(Error::All(vec![xcap_error, wayland_error.into()]))
-    }
+    return Err(Error::All(vec![wayland_error.into(), xcap_error]));
 }
 
 /// Fallback function that works on Linux Wayland devices with wlr-screencopy-unstable-v1.
