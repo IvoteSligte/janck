@@ -25,7 +25,7 @@ pub fn capture_video(frame_rate: u64) -> Result<impl Iterator<Item = crate::Fram
     info!("Starting recording");
     recorder.start()?;
     let video = receiver.into_iter().map(|xcap_frame| crate::Frame {
-        timestamp: chrono::Utc::now().timestamp_micros(),
+        timestamp: nettime::now().timestamp_micros(),
         bytes: xcap_frame.raw,
         width: xcap_frame.width,
         height: xcap_frame.height,

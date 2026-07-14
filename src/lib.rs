@@ -69,6 +69,15 @@ impl std::fmt::Display for Error {
     }
 }
 
+/// Must be called before any other functions are used to ensure timestamp accuracy.
+/// Use [bypass_sync_time] if internet access is not guaranteed and the captured video
+/// is not sent across the internet.
+pub use nettime::sync_time;
+
+/// Alternative to [sync_time] that simply assumes the local clock is accurate.
+/// This is fine if the video is not sent across the internet.
+pub use nettime::bypass_sync_time;
+
 /// Cross-platform function that works on most setups.
 pub fn capture_video(frame_rate: u64) -> Result<impl Iterator<Item = Frame>, Error> {
     // Trying Wayland screencopy first because XCap seems to hang on failure in  some situations

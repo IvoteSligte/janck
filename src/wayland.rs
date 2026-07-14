@@ -348,7 +348,7 @@ impl WaylandCapture {
                 _ => {}
             }
         }
-        let timestamp = chrono::Utc::now().timestamp_micros();
+        let timestamp = nettime::now().timestamp_micros();
 
         trace!(
             "Wait-for-ready or failed time: {}μs",
