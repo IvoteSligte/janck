@@ -348,7 +348,6 @@ impl WaylandCapture {
                 _ => {}
             }
         }
-        let timestamp = nettime::now().timestamp_micros();
 
         trace!(
             "Wait-for-ready or failed time: {}μs",
@@ -367,7 +366,6 @@ impl WaylandCapture {
         );
         let mmap = fc.mmap.unwrap();
         Ok(crate::Frame {
-            timestamp,
             bytes: mmap.to_vec(),
             width,
             height,

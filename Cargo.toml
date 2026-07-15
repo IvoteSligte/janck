@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-nettime = { path = "../nettime" }
 log = "0.4.33"
 thiserror = "2.0.18"
 xcap = "0.9.6"
