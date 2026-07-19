@@ -29,7 +29,7 @@ pub fn capture_video(frame_rate: u64) -> Result<impl Iterator<Item = crate::Fram
         width: xcap_frame.width,
         height: xcap_frame.height,
         stride: xcap_frame.width * 4,
-        format: crate::Format::Bgra8,
+        format: crate::Format::Rgba8,
     });
     info!("Video stream created");
     Ok(crate::subsample_video(video, frame_rate))
