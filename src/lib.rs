@@ -16,16 +16,22 @@ pub mod xcap;
 pub enum Format {
     Bgra8,
     Rgba8,
-    // TODO: other formats (BGRA8 is the most common)
+    // TODO: other formats
+}
+
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameInfo {
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub format: Format,
 }
 
 #[derive(Debug)]
 pub struct Frame {
     pub bytes: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
-    pub stride: u32,
-    pub format: Format,
+    pub info: FrameInfo,
 }
 
 #[derive(Error, Debug)]
