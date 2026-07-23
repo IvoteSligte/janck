@@ -19,7 +19,6 @@ pub enum Format {
     // TODO: other formats
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameInfo {
     pub width: u32,
@@ -123,12 +122,13 @@ fn subsample_video<T>(
         );
         let diff = now_frame.duration_since(last);
         if diff < frame_duration {
-            trace!(
-                "Sleeping {:.2}ms",
-                (frame_duration - diff).as_micros() as f32 / 1000.0
-            );
             // TODO: sleep tends to overshoot by ~50 micros, should this be compensated for?
+            let pre_sleep = Instant::now();
             std::thread::sleep(frame_duration - diff);
+            trace!(
+                "Slept {:.2}ms to limit FPS",
+                (Instant::now() - pre_sleep).as_micros() as f32 / 1000.0
+            );
         }
         let now_capture = Instant::now();
         video.next().inspect(|_| {
