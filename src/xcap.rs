@@ -3,6 +3,8 @@ use xcap::Monitor;
 
 use crate::Error;
 
+// TODO: capture cursor
+
 fn get_primary_monitor() -> Result<Monitor, Error> {
     let monitors = Monitor::all()?;
     let mut error = None;
