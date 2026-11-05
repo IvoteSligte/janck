@@ -942,6 +942,7 @@ dependencies = [
  "thiserror",
  "wayland-client",
  "wayland-protocols-wlr",
+ "windows",
  "xcap",
 ]
 

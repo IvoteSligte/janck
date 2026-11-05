@@ -15,5 +15,12 @@ wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 memmap2 = "0.9"
 libc = "0.2"
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [dev-dependencies]
 env_logger = "0.11.11"
