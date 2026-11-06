@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-const SECS: u64 = 3;
+const SECS: u64 = 30;
 
 fn main() {
     env_logger::init();
