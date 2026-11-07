@@ -24,12 +24,15 @@
 //! shot.save("screenshot.png").unwrap();
 //! ```
 
-use log::trace;
+use log::{debug, trace};
 pub use wayland_client;
 pub use wayland_protocols_wlr;
 
 use memmap2::MmapMut;
-use std::{os::unix::io::AsFd, time::Instant};
+use std::{
+    os::unix::io::AsFd,
+    time::{Duration, Instant},
+};
 use wayland_client::{
     Connection, Dispatch, EventQueue, QueueHandle, WEnum,
     protocol::{wl_buffer, wl_output, wl_registry, wl_shm, wl_shm_pool},
@@ -394,15 +397,47 @@ impl TryFrom<wl_shm::Format> for crate::Format {
 
 // ── API ────────────────────────────────────────────────────────────────────────
 
+fn subsample_video<T>(
+    mut video: impl Iterator<Item = T> + Send,
+    frame_rate: u32,
+) -> impl Iterator<Item = T> + Send {
+    let frame_duration = Duration::from_secs(1) / frame_rate;
+    let mut last = Instant::now();
+
+    std::iter::from_fn(move || {
+        let now_frame = Instant::now();
+        debug!(
+            "Time since last frame: {:.2}ms",
+            (now_frame - last).as_micros() as f32 / 1000.0
+        );
+        let diff = now_frame - last;
+        if diff < frame_duration {
+            std::thread::sleep(frame_duration - diff);
+        }
+        let now_capture = Instant::now();
+        video.next().inspect(|_| {
+            debug!(
+                "Frame capture time: {:.2}ms",
+                (Instant::now() - now_capture).as_micros() as f32 / 1000.0
+            );
+            last = now_frame;
+        })
+    })
+}
+
 const SHOW_CURSOR: bool = true;
 
+/// Works on Linux Wayland devices with wlr-screencopy-unstable-v1.
 pub fn capture_video(
-    frame_rate: u64,
-) -> Result<impl Iterator<Item = crate::Frame>, WaylandCaptureError> {
+    frame_rate: u32,
+) -> Result<
+    impl Iterator<Item = Result<crate::Frame, WaylandCaptureError>> + Send,
+    WaylandCaptureError,
+> {
     let mut capture = WaylandCapture::connect()?;
-    let video = std::iter::from_fn(move || {
+    let video = (0..).map(move |_| {
         // TODO: select primary output (if that is not already output 0)
-        capture.capture_output(0, SHOW_CURSOR).ok()
+        capture.capture_output(0, SHOW_CURSOR)
     });
-    Ok(crate::subsample_video(video, frame_rate))
+    Ok(subsample_video(video, frame_rate))
 }
