@@ -1,74 +1,70 @@
-use crate::{Frame, FrameInfo};
+use log::{debug, info};
+use windows_capture::d3d11::StagingTexture;
+use windows_capture::dxgi_duplication_api::{DxgiDuplicationApi, DxgiDuplicationFormat};
+use windows_capture::monitor::Monitor;
 
-use std::time::Duration;
+use crate::{Error, Frame, FrameInfo};
 
-use wgc::*;
-use windows::Win32::{
-    Foundation::POINT,
-    Graphics::Gdi::{HMONITOR, MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint},
-};
+const TIMEOUT_MS: u32 = 1000;
 
-fn get_primary_monitor() -> HMONITOR {
-    unsafe {
-        let point = POINT::default();
-        MonitorFromPoint(point, MONITOR_DEFAULTTOPRIMARY)
+fn next_frame(
+    dxgi_duplication: &mut DxgiDuplicationApi,
+    staging: &mut Option<StagingTexture>,
+) -> Result<Frame, Error> {
+    let mut frame = loop {
+        let frame = dxgi_duplication.acquire_next_frame(TIMEOUT_MS)?;
+
+        // Note: Windows-capture may send an empty frame, which we can check
+        // by seeing if frame.frame_info().LastPresentTime is zero.
+        if frame.frame_info().LastPresentTime == 0 {
+            debug!("Skipped empty frame.");
+            continue;
+        }
+        break frame;
+    };
+    let format = match frame.format() {
+        DxgiDuplicationFormat::Bgra8 => crate::Format::Bgra8,
+        DxgiDuplicationFormat::Rgba8 => crate::Format::Rgba8,
+        _ => unreachable!(),
+    };
+    if staging.as_ref().is_none_or(|staging: &StagingTexture| {
+        let s = staging.desc();
+        let f = frame.texture_desc();
+        s.Width != f.Width || s.Height != f.Height || s.Format != f.Format
+    }) {
+        *staging = Some(StagingTexture::new(
+            frame.device(),
+            frame.width(),
+            frame.height(),
+            frame.texture_desc().Format,
+        )?);
     }
-}
-
-fn create_wgc(frame_rate: u32) -> Result<Wgc, WgcError> {
-    Wgc::new_from_monitor(get_primary_monitor())?
-        // TODO: use monitor-native pixel format IF applicable
-        // https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/desktop-dup-api
-        // says that for DXGI desktop duplication the format is always BGRA8_UNORM,
-        // but that might be different for WGC
-        .pixel_format(PixelFormat::BGRA8)
-        .frame_queue_length(2)
-        .capture_cursor(true)
-        .min_update_interval(Duration::from_secs(1) / frame_rate)
-        .build()
-}
-
-fn map_frame(frame: wgc::Frame) -> Result<Frame, WgcError> {
-    let FrameSize { width, height } = frame.size()?;
-    // TODO: modify WGC library to optimize pixels() method for MAJOR fps gain
-    let bytes = frame.pixels()?;
+    let staging = staging.as_mut().unwrap();
+    let mut buffer = frame.buffer_with(staging)?;
     Ok(Frame {
-        bytes,
+        bytes: buffer.as_raw_buffer().to_vec(),
         info: FrameInfo {
-            width: width,
-            height: height,
-            stride: 4 * width,
-            format: crate::Format::Bgra8, // TODO: monitor native format
+            width: buffer.width(),
+            height: buffer.height(),
+            stride: buffer.row_pitch(),
+            format,
         },
     })
 }
 
-/// Uses `WGC` to capture video.
+/// Uses `DXGI` to capture video.
 pub fn capture_video(
     frame_rate: u32,
-) -> Result<impl Iterator<Item = Result<Frame, WgcError>> + Send, WgcError> {
-    let (init_sender, init_receiver) = std::sync::mpsc::sync_channel(0);
-    let (sender, receiver) = std::sync::mpsc::sync_channel(0);
-    std::thread::spawn(move || {
-        let wgc = match create_wgc(frame_rate) {
-            Ok(wgc) => wgc,
-            Err(err) => {
-                let _ = init_sender.send(Err(err));
-                return;
-            }
-        };
-        let Ok(()) = init_sender.send(Ok(())) else {
-            return;
-        };
-        for frame_result in wgc {
-            let item = match frame_result {
-                Ok(frame) => map_frame(frame),
-                Err(err) => Err(err),
-            };
-            let Ok(()) = sender.send(item) else {
-                break;
-            };
-        }
-    });
-    init_receiver.recv().unwrap().map(|_| receiver.into_iter())
+) -> Result<impl Iterator<Item = Result<Frame, crate::Error>> + Send, crate::Error> {
+    let monitor = Monitor::primary()?;
+    let mut dxgi_duplication = DxgiDuplicationApi::new_options(
+        monitor,
+        &[DxgiDuplicationFormat::Bgra8, DxgiDuplicationFormat::Rgba8],
+    )?;
+    let mut staging = None;
+    info!("Created DXGI Duplication object");
+
+    Ok(std::iter::from_fn(move || {
+        Some(next_frame(&mut dxgi_duplication, &mut staging))
+    }))
 }

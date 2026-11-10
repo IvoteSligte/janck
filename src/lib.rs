@@ -43,8 +43,16 @@ pub enum Error {
     WaylandScreenCopy(#[from] wayland::WaylandCaptureError),
 
     #[cfg(target_os = "windows")]
-    #[error("WGC error: {0}")]
-    Wgc(#[from] wgc::WgcError),
+    #[error("DXGI duplication error: {0}")]
+    DxgiDuplication(#[from] windows_capture::dxgi_duplication_api::Error),
+
+    #[cfg(target_os = "windows")]
+    #[error("DXGI monitor error: {0}")]
+    Monitor(#[from] windows_capture::monitor::Error),
+
+    #[cfg(target_os = "windows")]
+    #[error("DXGI D3D11 error: {0}")]
+    D3d11(#[from] windows_capture::d3d11::Error),
 }
 
 /// Cross-platform function that works on most setups.
