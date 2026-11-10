@@ -17,7 +17,11 @@ fn get_primary_monitor() -> HMONITOR {
 
 fn create_wgc(frame_rate: u32) -> Result<Wgc, WgcError> {
     Wgc::new_from_monitor(get_primary_monitor())?
-        .pixel_format(PixelFormat::RGBA8)
+        // TODO: use monitor-native pixel format IF applicable
+        // https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/desktop-dup-api
+        // says that for DXGI desktop duplication the format is always BGRA8_UNORM,
+        // but that might be different for WGC
+        .pixel_format(PixelFormat::BGRA8)
         .frame_queue_length(2)
         .capture_cursor(true)
         .min_update_interval(Duration::from_secs(1) / frame_rate)
@@ -26,6 +30,7 @@ fn create_wgc(frame_rate: u32) -> Result<Wgc, WgcError> {
 
 fn map_frame(frame: wgc::Frame) -> Result<Frame, WgcError> {
     let FrameSize { width, height } = frame.size()?;
+    // TODO: modify WGC library to optimize pixels() method for MAJOR fps gain
     let bytes = frame.pixels()?;
     Ok(Frame {
         bytes,
@@ -33,7 +38,7 @@ fn map_frame(frame: wgc::Frame) -> Result<Frame, WgcError> {
             width: width,
             height: height,
             stride: 4 * width,
-            format: crate::Format::Rgba8,
+            format: crate::Format::Bgra8, // TODO: monitor native format
         },
     })
 }
