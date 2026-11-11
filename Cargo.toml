@@ -2,20 +2,16 @@
 name = "janck"
 version = "0.1.0"
 edition = "2024"
-description = "High-level cross-platform screen capture library"
+description = "High-level Linux screen capture library"
 
 [dependencies]
 log = "0.4.33"
 thiserror = "2.0.18"
-
-[target.'cfg(target_os = "linux")'.dependencies]
+# wayland-specific
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 memmap2 = "0.9"
 libc = "0.2"
-
-[target.'cfg(target_os = "windows")'.dependencies]
-windows-capture = "2.0.1"
 
 [dev-dependencies]
 env_logger = "0.11.11"

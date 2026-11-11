@@ -4,12 +4,8 @@
 use log::{info, warn};
 use thiserror::Error;
 
-#[cfg(target_os = "macos")]
-pub mod macos;
 #[cfg(target_os = "linux")]
 pub mod wayland;
-#[cfg(target_os = "windows")]
-pub mod windows;
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,49 +31,19 @@ pub struct Frame {
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("No monitor detected")]
-    NoMonitorDetected,
-
     #[cfg(target_os = "linux")]
-    #[error("Wayland screencopy error: {0}")]
-    WaylandScreenCopy(#[from] wayland::WaylandCaptureError),
-
-    #[cfg(target_os = "windows")]
-    #[error("DXGI duplication error: {0}")]
-    DxgiDuplication(#[from] windows_capture::dxgi_duplication_api::Error),
-
-    #[cfg(target_os = "windows")]
-    #[error("DXGI monitor error: {0}")]
-    Monitor(#[from] windows_capture::monitor::Error),
-
-    #[cfg(target_os = "windows")]
-    #[error("DXGI D3D11 error: {0}")]
-    D3d11(#[from] windows_capture::d3d11::Error),
+    #[error("Wayland error: {0}")]
+    Wayland(#[from] wayland::WaylandCaptureError),
 }
 
-/// Cross-platform function that works on most setups.
 pub fn capture_video(
     frame_rate: u32,
 ) -> Result<impl Iterator<Item = Result<Frame, Error>> + Send, Error> {
-    // Trying Wayland screencopy first because XCap seems to hang on failure in  some situations
-    #[cfg(target_os = "linux")]
-    {
-        info!("Trying Wayland screencopy");
-        Ok(crate::wayland::capture_video(frame_rate)
-            .inspect_err(|err| {
-                warn!("Wayland screencopy failed: {err}");
-                info!("X11 is not supported");
-            })?
-            .map(|result| result.map_err(Error::from)))
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        info!("Trying WGC screen capture");
-        Ok(crate::windows::capture_video(frame_rate)
-            .inspect_err(|err| {
-                warn!("WGC screen capture failed: {err}");
-            })?
-            .map(|result| result.map_err(Error::from)))
-    }
+    info!("Trying Wayland screencopy");
+    Ok(crate::wayland::capture_video(frame_rate)
+        .inspect_err(|err| {
+            warn!("Wayland screencopy failed: {err}");
+            info!("X11 is not supported");
+        })?
+        .map(|result| result.map_err(Error::from)))
 }
