@@ -402,7 +402,7 @@ fn subsample_video<T>(
     frame_rate: u32,
 ) -> impl Iterator<Item = T> + Send {
     let frame_duration = Duration::from_secs(1) / frame_rate;
-    let mut last = Instant::now();
+    let mut last = Instant::now() - frame_duration;
 
     std::iter::from_fn(move || {
         let now_frame = Instant::now();
@@ -426,6 +426,7 @@ fn subsample_video<T>(
 }
 
 const SHOW_CURSOR: bool = true;
+const OUTPUT_INDEX: usize = 0;
 
 /// Works on Linux Wayland devices with wlr-screencopy-unstable-v1.
 pub fn capture_video(
@@ -437,7 +438,14 @@ pub fn capture_video(
     let mut capture = WaylandCapture::connect()?;
     let video = (0..).map(move |_| {
         // TODO: select primary output (if that is not already output 0)
-        capture.capture_output(0, SHOW_CURSOR)
+        capture.capture_output(OUTPUT_INDEX, SHOW_CURSOR)
     });
     Ok(subsample_video(video, frame_rate))
+}
+
+pub fn screen_info() -> Result<crate::FrameInfo, WaylandCaptureError> {
+    // TODO: more efficient implementation
+    let mut capture = WaylandCapture::connect()?;
+    let frame = capture.capture_output(OUTPUT_INDEX, SHOW_CURSOR)?;
+    Ok(frame.info)
 }

@@ -43,7 +43,15 @@ pub fn capture_video(
     Ok(crate::wayland::capture_video(frame_rate)
         .inspect_err(|err| {
             warn!("Wayland screencopy failed: {err}");
-            info!("X11 is not supported");
+            info!("X11 is not supported at the moment");
         })?
         .map(|result| result.map_err(Error::from)))
+}
+
+/// Gets the [ScreenInfo] resolution of the monitor that `capture_video` captures.
+pub fn screen_info() -> Result<FrameInfo, Error> {
+    Ok(crate::wayland::screen_info().inspect_err(|err| {
+        warn!("Getting Wayland screen resolution failed: {err}");
+        info!("X11 is not supported at the moment");
+    })?)
 }
